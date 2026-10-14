@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-service-config
+  namespace: billing
+  labels:
+    app: billing-service
+data:
+  QUARKUS_HTTP_HOST: "0.0.0.0"
+  QUARKUS_LOG_LEVEL: INFO
