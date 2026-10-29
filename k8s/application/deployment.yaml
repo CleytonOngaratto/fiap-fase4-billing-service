@@ -27,6 +27,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        # Sem isto o Secret montado fica root:root com modo 0440 e o processo (uid 1001) nao le a chave.
+        fsGroup: 1001
       containers:
         - name: billing-service
           image: __IMAGE__
