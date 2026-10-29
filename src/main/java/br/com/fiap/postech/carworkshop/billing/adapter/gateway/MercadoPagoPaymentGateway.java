@@ -4,6 +4,7 @@ import br.com.fiap.postech.carworkshop.billing.domain.entity.Budget;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.BudgetItem;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.Payment;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.PaymentGatewayException;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.CancellationOutcome;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentGatewayPort;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentSnapshot;
@@ -35,6 +36,7 @@ public class MercadoPagoPaymentGateway implements PaymentGatewayPort {
     private static final DateTimeFormatter MP_DATE =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
     private static final int NOT_CANCELABLE_CODE = 2018;
+    private static final int NOT_FOUND = 404;
     private static final String CURRENCY = "BRL";
 
     private final String baseUrl;
@@ -73,7 +75,15 @@ public class MercadoPagoPaymentGateway implements PaymentGatewayPort {
 
     @Override
     public PaymentSnapshot getPayment(String mpPaymentId) {
-        JsonNode body = parse(send(request("/v1/payments/" + mpPaymentId).GET()));
+        HttpResponse<String> response =
+                sendAllowingRefusal(request("/v1/payments/" + mpPaymentId).GET());
+        // 404 aqui e permanente: o Mercado Pago nao conhece esse pagamento e nunca vai conhecer. Quem
+        // trata e o chamador, porque responder erro ao webhook faria o Mercado Pago reentregar para sempre.
+        if (response.statusCode() == NOT_FOUND) {
+            throw new UnknownPaymentException(
+                    "Mercado Pago does not know payment " + mpPaymentId + ".");
+        }
+        JsonNode body = parse(verified(response));
         return new PaymentSnapshot(
                 text(body, "id"),
                 text(body, "status"),
@@ -143,7 +153,10 @@ public class MercadoPagoPaymentGateway implements PaymentGatewayPort {
     }
 
     private HttpResponse<String> send(HttpRequest.Builder builder) {
-        HttpResponse<String> response = sendAllowingRefusal(builder);
+        return verified(sendAllowingRefusal(builder));
+    }
+
+    private HttpResponse<String> verified(HttpResponse<String> response) {
         if (!isSuccessful(response)) {
             throw new PaymentGatewayException("Mercado Pago answered HTTP " + response.statusCode()
                     + " for " + response.uri().getPath() + ".");

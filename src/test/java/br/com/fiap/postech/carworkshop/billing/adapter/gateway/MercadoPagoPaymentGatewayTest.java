@@ -3,6 +3,7 @@ package br.com.fiap.postech.carworkshop.billing.adapter.gateway;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.Budget;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.Payment;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.PaymentGatewayException;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.support.BillingFixtures;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.CancellationOutcome;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentSnapshot;
@@ -24,6 +25,7 @@ import java.util.UUID;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -201,6 +203,16 @@ class MercadoPagoPaymentGatewayTest {
         assertThrows(PaymentGatewayException.class, () -> gateway.createPreference(budget, payment));
 
         wireMock.verify(1, postRequestedFor(urlPathEqualTo("/checkout/preferences")));
+    }
+
+    @Test
+    void reportsAnUnknownPaymentWhenMercadoPagoAnswersNotFound() {
+        wireMock.stubFor(get(urlPathEqualTo("/v1/payments/mp-1"))
+                .willReturn(aResponse().withStatus(404).withBody("{\"status\":404}")));
+
+        assertThrows(UnknownPaymentException.class, () -> gateway.getPayment("mp-1"));
+
+        wireMock.verify(1, getRequestedFor(urlPathEqualTo("/v1/payments/mp-1")));
     }
 
     @Test
