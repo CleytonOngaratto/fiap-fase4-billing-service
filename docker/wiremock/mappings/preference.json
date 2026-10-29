@@ -1,0 +1,16 @@
+{
+  "name": "Checkout Pro preference",
+  "request": {
+    "method": "POST",
+    "urlPath": "/checkout/preferences"
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "id": "1234567890-fake-preference",
+      "init_point": "http://localhost:8089/checkout/start?pref_id=1234567890-fake-preference",
+      "sandbox_init_point": "http://localhost:8089/checkout/start?pref_id=1234567890-fake-preference"
+    }
+  }
+}

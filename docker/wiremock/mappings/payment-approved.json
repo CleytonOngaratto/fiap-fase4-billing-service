@@ -1,0 +1,19 @@
+{
+  "name": "Payment status (echoes the id as external_reference)",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/v1/payments/[^/]+"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "transformers": ["response-template"],
+    "jsonBody": {
+      "id": "{{request.pathSegments.[2]}}",
+      "status": "approved",
+      "status_detail": "accredited",
+      "transaction_amount": 257.70,
+      "external_reference": "{{request.pathSegments.[2]}}"
+    }
+  }
+}

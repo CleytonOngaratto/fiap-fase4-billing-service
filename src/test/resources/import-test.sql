@@ -1,0 +1,3 @@
+-- Vazio de proposito: cada teste monta o proprio dado. O arquivo precisa EXISTIR porque
+-- quarkus.hibernate-orm.sql-load-script o aponta explicitamente, e nesse caso o boot do perfil de teste
+-- falha se ele faltar (ao contrario do import.sql default, que e opcional).

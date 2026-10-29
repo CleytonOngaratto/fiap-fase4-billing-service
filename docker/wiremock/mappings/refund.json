@@ -1,0 +1,17 @@
+{
+  "name": "Full refund",
+  "request": {
+    "method": "POST",
+    "urlPathPattern": "/v1/payments/[^/]+/refunds"
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "transformers": ["response-template"],
+    "jsonBody": {
+      "id": "fake-refund-{{request.pathSegments.[2]}}",
+      "payment_id": "{{request.pathSegments.[2]}}",
+      "status": "approved"
+    }
+  }
+}
