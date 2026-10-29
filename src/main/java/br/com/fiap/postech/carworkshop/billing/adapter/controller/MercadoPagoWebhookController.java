@@ -1,6 +1,7 @@
 package br.com.fiap.postech.carworkshop.billing.adapter.controller;
 
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.MercadoPagoSignatureVerifier;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogContext;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.in.PaymentNotificationUseCase;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -64,6 +65,11 @@ public class MercadoPagoWebhookController {
 
         try (LogContext ignored = LogContext.of(forLog(dataId), null)) {
             useCase.onNotification(dataId);
+        } catch (UnknownPaymentException e) {
+            // Reconhece em vez de propagar: o Mercado Pago reentrega enquanto nao receber 2xx, e um
+            // pagamento que ele proprio nao conhece nunca vai passar a existir.
+            log.warn("Notification {} refers to a payment the provider does not know: acknowledged.",
+                    forLog(dataId));
         }
         return Response.ok().build();
     }

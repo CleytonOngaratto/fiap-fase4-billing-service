@@ -1,6 +1,7 @@
 package br.com.fiap.postech.carworkshop.billing.adapter.controller;
 
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.MercadoPagoSignatureVerifier;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.in.PaymentNotificationUseCase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -106,6 +108,14 @@ class MercadoPagoWebhookControllerUnitTest {
         assertEquals(64, MercadoPagoWebhookController.forLog("a".repeat(200)).length());
         assertNull(MercadoPagoWebhookController.forLog(null));
         assertEquals("abc-1.2:3_4", MercadoPagoWebhookController.forLog("abc-1.2:3_4"));
+    }
+
+    @Test
+    void acknowledgesANotificationForAPaymentTheProviderDoesNotKnow() {
+        doThrow(new UnknownPaymentException("unknown")).when(useCase).onNotification(DATA_ID);
+
+        assertEquals(200, controller.notify(body("payment", DATA_ID), "payment", null, null,
+                SIGNATURE, REQUEST_ID).getStatus());
     }
 
     private JsonNode body(String type, String dataId) {
