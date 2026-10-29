@@ -8,6 +8,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -87,6 +90,22 @@ class MercadoPagoWebhookControllerUnitTest {
         assertEquals(200, controller.notify(null, null, null, null, SIGNATURE, null).getStatus());
 
         verifyNoInteractions(useCase);
+    }
+
+    // A rota e publica: sem reduzir o valor a um alfabeto conhecido, uma quebra de linha na query
+    // string forja uma linha inteira de log.
+    @Test
+    void sanitizesWhatGoesIntoTheLog() {
+        String forjado = "1234" + "\n" + "2026-01-01 INFO  pagamento aprovado";
+
+        String limpo = MercadoPagoWebhookController.forLog(forjado);
+
+        assertFalse(limpo.contains("\n"));
+        assertFalse(limpo.contains("\r"));
+        assertTrue(limpo.startsWith("1234"));
+        assertEquals(64, MercadoPagoWebhookController.forLog("a".repeat(200)).length());
+        assertNull(MercadoPagoWebhookController.forLog(null));
+        assertEquals("abc-1.2:3_4", MercadoPagoWebhookController.forLog("abc-1.2:3_4"));
     }
 
     private JsonNode body(String type, String dataId) {

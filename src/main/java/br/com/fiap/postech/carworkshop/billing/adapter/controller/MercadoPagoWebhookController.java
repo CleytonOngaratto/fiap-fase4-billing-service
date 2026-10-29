@@ -50,21 +50,32 @@ public class MercadoPagoWebhookController {
         String dataId = first(queryDataId, dataIdOf(body));
 
         if (!verifier.isValid(signature, dataId, requestId)) {
-            log.warn("Notification {} arrived with an invalid signature: refused.", dataId);
+            log.warn("Notification {} arrived with an invalid signature: refused.", forLog(dataId));
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
 
         // Topico que nao e de pagamento sai com 200: qualquer outra coisa faz o Mercado Pago reentregar
         // para sempre, e o painel manda merchant_order em alguns fluxos.
         if (!PAYMENT_TOPIC.equals(topic)) {
-            log.info("Notification topic {} is not handled by this service: acknowledged.", topic);
+            log.info("Notification topic {} is not handled by this service: acknowledged.",
+                    forLog(topic));
             return Response.ok().build();
         }
 
-        try (LogContext ignored = LogContext.of(dataId, null)) {
+        try (LogContext ignored = LogContext.of(forLog(dataId), null)) {
             useCase.onNotification(dataId);
         }
         return Response.ok().build();
+    }
+
+    // Rota publica: o topico e o id vem da query string de quem chamar. Sem reduzir a um alfabeto
+    // conhecido, uma quebra de linha no valor forja uma linha inteira de log.
+    static String forLog(String value) {
+        if (value == null) {
+            return null;
+        }
+        String bounded = value.length() > 64 ? value.substring(0, 64) : value;
+        return bounded.replaceAll("[^A-Za-z0-9._:-]", "_");
     }
 
     private static String dataIdOf(JsonNode body) {
