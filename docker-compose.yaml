@@ -29,6 +29,9 @@ services:
       BILLING_COMMANDS_QUEUE_URL: http://billing_mq:9324/000000000000/billing-commands.fifo
       # O ElasticMQ nao emula SNS: em local o relay registra o envelope em log em vez de publicar.
       BILLING_EVENTS_PUBLISH_TO_LOG: "true"
+      # Exigido mesmo sem publicar no SNS: o produtor do publicador injeta o ARN como String, e valor
+      # vazio conta como ausente — a app nao sobe.
+      BILLING_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:billing-events.fifo
       MERCADOPAGO_BASE_URL: http://billing_mp:8080
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-fake-access-token}
       MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-dev-webhook-secret}
