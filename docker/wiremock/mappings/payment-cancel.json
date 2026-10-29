@@ -1,0 +1,17 @@
+{
+  "name": "Payment cancellation",
+  "request": {
+    "method": "PUT",
+    "urlPathPattern": "/v1/payments/[^/]+"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "transformers": ["response-template"],
+    "jsonBody": {
+      "id": "{{request.pathSegments.[2]}}",
+      "status": "cancelled",
+      "status_detail": "by_collector"
+    }
+  }
+}

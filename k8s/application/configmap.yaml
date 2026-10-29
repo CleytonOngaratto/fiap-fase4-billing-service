@@ -8,3 +8,12 @@ metadata:
 data:
   QUARKUS_HTTP_HOST: "0.0.0.0"
   QUARKUS_LOG_LEVEL: INFO
+
+  # Sem QUARKUS_DATASOURCE_JDBC_URL: ela sobrescreveria a URL montada na app e o sslmode=require sumiria calado.
+  DB_SSLMODE: require
+
+  JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
+
+  # Trocados no deploy pelo cd.yml; aplicados crus, o consumidor sobe sem fila e o relay sem tópico.
+  BILLING_COMMANDS_QUEUE_URL: __BILLING_COMMANDS_QUEUE_URL__
+  BILLING_EVENTS_TOPIC_ARN: __BILLING_EVENTS_TOPIC_ARN__

@@ -1,0 +1,82 @@
+services:
+  billing_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: billing-service:local
+    container_name: billing_app
+    ports:
+      - "8081:8080"
+    environment:
+      DB_HOST: billing_db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-billing_db}
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_SSLMODE: disable
+      JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
+      # Sem valor: repassa do ambiente e omite se ausente; ${VAR:-} mandaria vazio, que o agente trata diferente.
+      NEW_RELIC_LICENSE_KEY:
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-billing-service-local}
+      # A imagem roda com o perfil de producao: endpoint, credencial e fila vem por env, nao pelo %dev.
+      QUARKUS_SQS_ENDPOINT_OVERRIDE: http://billing_mq:9324
+      QUARKUS_SQS_AWS_CREDENTIALS_TYPE: static
+      QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: elasticmq
+      QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: elasticmq
+      QUARKUS_SNS_AWS_CREDENTIALS_TYPE: static
+      QUARKUS_SNS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: sns-fake
+      QUARKUS_SNS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: sns-fake
+      BILLING_COMMANDS_QUEUE_URL: http://billing_mq:9324/000000000000/billing-commands.fifo
+      # O ElasticMQ nao emula SNS: em local o relay registra o envelope em log em vez de publicar.
+      BILLING_EVENTS_PUBLISH_TO_LOG: "true"
+      # Exigido mesmo sem publicar no SNS: o produtor do publicador injeta o ARN como String, e valor
+      # vazio conta como ausente — a app nao sobe.
+      BILLING_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:billing-events.fifo
+      MERCADOPAGO_BASE_URL: http://billing_mp:8080
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-fake-access-token}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-dev-webhook-secret}
+    volumes:
+      - ./secrets:/deployments/secrets:ro
+    depends_on:
+      billing_db:
+        condition: service_healthy
+      billing_mq:
+        condition: service_started
+      billing_mp:
+        condition: service_started
+
+  billing_db:
+    image: postgres:16
+    container_name: billing_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-billing_db}
+    ports:
+      - "${DB_PORT_HOST:-5434}:5432"
+    volumes:
+      - billing_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-billing_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  billing_mq:
+    image: softwaremill/elasticmq-native:1.7.1
+    container_name: billing_mq
+    ports:
+      - "${MQ_PORT_HOST:-9325}:9324"
+    volumes:
+      - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+
+  billing_mp:
+    image: wiremock/wiremock:3.13.2
+    container_name: billing_mp
+    ports:
+      - "${MP_PORT_HOST:-8089}:8080"
+    volumes:
+      - ./docker/wiremock/mappings:/home/wiremock/mappings:ro
+
+volumes:
+  billing_postgres_data:
