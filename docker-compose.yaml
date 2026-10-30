@@ -19,20 +19,23 @@ services:
       NEW_RELIC_LICENSE_KEY:
       NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-billing-service-local}
       # A imagem roda com o perfil de producao: endpoint, credencial e fila vem por env, nao pelo %dev.
-      QUARKUS_SQS_ENDPOINT_OVERRIDE: http://billing_mq:9324
+      # Os hosts abaixo sao os ALIAS sem sublinhado, nunca os nomes dos servicos: o resolvedor de endpoint do
+      # SDK da AWS e o HttpRequest do JDK recusam "_" na autoridade de uma URL - o SDK descarta a autoridade
+      # ate sobrar "http:" e o JDK responde "unsupported URI". O JDBC tem o proprio parser e aceita billing_db.
+      QUARKUS_SQS_ENDPOINT_OVERRIDE: http://billingmq:9324
       QUARKUS_SQS_AWS_CREDENTIALS_TYPE: static
       QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: elasticmq
       QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: elasticmq
       QUARKUS_SNS_AWS_CREDENTIALS_TYPE: static
       QUARKUS_SNS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: sns-fake
       QUARKUS_SNS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: sns-fake
-      BILLING_COMMANDS_QUEUE_URL: http://billing_mq:9324/000000000000/billing-commands.fifo
+      BILLING_COMMANDS_QUEUE_URL: http://billingmq:9324/000000000000/billing-commands.fifo
       # O ElasticMQ nao emula SNS: em local o relay registra o envelope em log em vez de publicar.
       BILLING_EVENTS_PUBLISH_TO_LOG: "true"
       # Exigido mesmo sem publicar no SNS: o produtor do publicador injeta o ARN como String, e valor
       # vazio conta como ausente — a app nao sobe.
       BILLING_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:billing-events.fifo
-      MERCADOPAGO_BASE_URL: http://billing_mp:8080
+      MERCADOPAGO_BASE_URL: http://billingmp:8080
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-fake-access-token}
       MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-dev-webhook-secret}
     volumes:
@@ -69,6 +72,10 @@ services:
       - "${MQ_PORT_HOST:-9325}:9324"
     volumes:
       - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    networks:
+      default:
+        aliases:
+          - billingmq
 
   billing_mp:
     image: wiremock/wiremock:3.13.2
@@ -77,6 +84,10 @@ services:
       - "${MP_PORT_HOST:-8089}:8080"
     volumes:
       - ./docker/wiremock/mappings:/home/wiremock/mappings:ro
+    networks:
+      default:
+        aliases:
+          - billingmp
 
 volumes:
   billing_postgres_data:
