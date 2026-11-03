@@ -104,6 +104,48 @@ class BudgetControllerTest {
         given().when().get("/{id}", UUID.randomUUID()).then().statusCode(404);
     }
 
+    @Test
+    @TestSecurity(user = "customer", roles = "CUSTOMER")
+    @JwtSecurity(claims = @Claim(key = "cpf", value = BillingFixtures.OWNER))
+    void theOwnerFindsTheBudgetByItsWorkOrder() {
+        UUID id = budgetFor(withinDeadline());
+
+        given().queryParam("work_order_id", workOrderOf(id)).when().get().then()
+                .statusCode(200)
+                .body("id", is(id.toString()));
+    }
+
+    @Test
+    @TestSecurity(user = "intruder", roles = "CUSTOMER")
+    @JwtSecurity(claims = @Claim(key = "cpf", value = BillingFixtures.INTRUDER))
+    void anotherCustomerCannotFindTheBudgetByItsWorkOrder() {
+        UUID id = budgetFor(withinDeadline());
+
+        given().queryParam("work_order_id", workOrderOf(id)).when().get().then().statusCode(403);
+    }
+
+    @Test
+    void findingByWorkOrderNeedsAToken() {
+        given().queryParam("work_order_id", 1).when().get().then().statusCode(401);
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void findingByWorkOrderNeedsTheParameter() {
+        given().when().get().then().statusCode(400);
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void aWorkOrderWithoutABudgetIsNotFound() {
+        given().queryParam("work_order_id", 999_999L).when().get().then().statusCode(404);
+    }
+
+    private long workOrderOf(UUID budgetId) {
+        return QuarkusTransaction.requiringNew()
+                .call(() -> budgets.findById(budgetId).orElseThrow().getWorkOrderId());
+    }
+
     private UUID budgetFor(Instant approvalDeadline) {
         long workOrderId = WORK_ORDER_SEQUENCE.incrementAndGet();
         UUID[] id = new UUID[1];

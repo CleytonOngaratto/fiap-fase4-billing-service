@@ -49,6 +49,7 @@ Três regras valem para todos eles:
 
 | Rota | Quem pode | Resposta |
 |---|---|---|
+| `GET /billing/v1/budgets?work_order_id={id}` | o **dono** do orçamento (claim `cpf`) ou ADMIN | o mesmo do `GET` por id, para quem conhece a OS e ainda não o id do orçamento; **400** sem o parâmetro, **404** sem orçamento |
 | `GET /billing/v1/budgets/{id}` | o **dono** do orçamento (claim `cpf`) ou ADMIN | orçamento, itens, total e — quando já existe — o link de pagamento |
 | `POST /billing/v1/budgets/{id}/approve` | o dono | **202**; a cobrança nasce de forma assíncrona |
 | `POST /billing/v1/budgets/{id}/reject` | o dono | **202** |

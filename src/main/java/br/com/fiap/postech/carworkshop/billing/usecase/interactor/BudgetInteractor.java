@@ -87,11 +87,21 @@ public class BudgetInteractor implements BudgetUseCase {
 
     @Override
     public BudgetView findById(UUID budgetId, String customerDocument, boolean staff) {
-        Budget budget = require(budgetId);
+        return viewFor(require(budgetId), customerDocument, staff);
+    }
+
+    @Override
+    public BudgetView findByWorkOrder(Long workOrderId, String customerDocument, boolean staff) {
+        Budget budget = budgets.findByWorkOrderId(workOrderId)
+                .orElseThrow(() -> new BudgetNotFoundException("No budget for work order " + workOrderId + "."));
+        return viewFor(budget, customerDocument, staff);
+    }
+
+    private BudgetView viewFor(Budget budget, String customerDocument, boolean staff) {
         if (!staff && !budget.isOwnedBy(customerDocument)) {
             throw new NotBudgetOwnerException("This budget belongs to another customer.");
         }
-        Payment payment = payments.findByBudgetId(budgetId).orElse(null);
+        Payment payment = payments.findByBudgetId(budget.getId()).orElse(null);
         return new BudgetView(budget, payment);
     }
 
