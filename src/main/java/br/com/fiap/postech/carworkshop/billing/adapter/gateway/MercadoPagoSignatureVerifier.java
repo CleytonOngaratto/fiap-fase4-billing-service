@@ -7,9 +7,6 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 
-// Template do manifesto NAO confirmado na doc oficial do Mercado Pago: a pagina de Webhooks mostra so o
-// formato "ts=...,v1=..." e manda usar o SDK. O formato abaixo e hipotese, a medir com o botao "Simular"
-// do painel antes de depender dele; o request-id tambem depende de o API Gateway repassar o header.
 public final class MercadoPagoSignatureVerifier {
 
     private static final String ALGORITHM = "HmacSHA256";
