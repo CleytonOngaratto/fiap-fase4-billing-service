@@ -16,4 +16,6 @@ public interface BudgetUseCase {
     void reject(UUID budgetId, String customerDocument, String correlationId);
 
     BudgetView findById(UUID budgetId, String customerDocument, boolean staff);
+
+    BudgetView findByWorkOrder(Long workOrderId, String customerDocument, boolean staff);
 }

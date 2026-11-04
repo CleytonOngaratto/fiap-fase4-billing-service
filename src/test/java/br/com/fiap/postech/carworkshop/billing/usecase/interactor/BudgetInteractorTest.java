@@ -197,6 +197,48 @@ class BudgetInteractorTest {
                 () -> useCase.findById(id, BillingFixtures.INTRUDER, false));
     }
 
+    @Test
+    void readsTheBudgetOfAWorkOrderForTheOwnerWithItsPayment() {
+        Budget budget = BillingFixtures.budget();
+        when(budgets.findByWorkOrderId(BillingFixtures.WORK_ORDER_ID)).thenReturn(Optional.of(budget));
+        when(payments.findByBudgetId(budget.getId()))
+                .thenReturn(Optional.of(BillingFixtures.payment(budget.getId())));
+
+        BudgetView view = useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.OWNER, false);
+
+        assertSame(budget, view.budget());
+        assertEquals(budget.getId(), view.payment().getBudgetId());
+    }
+
+    @Test
+    void readsTheBudgetOfAWorkOrderForStaffWithoutOwnershipCheck() {
+        Budget budget = BillingFixtures.budget();
+        when(budgets.findByWorkOrderId(BillingFixtures.WORK_ORDER_ID)).thenReturn(Optional.of(budget));
+        when(payments.findByBudgetId(budget.getId())).thenReturn(Optional.empty());
+
+        BudgetView view = useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, null, true);
+
+        assertSame(budget, view.budget());
+        assertNull(view.payment());
+    }
+
+    @Test
+    void refusesToReadTheBudgetOfAWorkOrderOfAnotherCustomer() {
+        when(budgets.findByWorkOrderId(BillingFixtures.WORK_ORDER_ID))
+                .thenReturn(Optional.of(BillingFixtures.budget()));
+
+        assertThrows(NotBudgetOwnerException.class,
+                () -> useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.INTRUDER, false));
+    }
+
+    @Test
+    void aWorkOrderWithoutABudgetIsNotFound() {
+        when(budgets.findByWorkOrderId(BillingFixtures.WORK_ORDER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(BudgetNotFoundException.class,
+                () -> useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.OWNER, false));
+    }
+
     private CreateBudgetCommand createCommand(BigDecimal total) {
         return new CreateBudgetCommand(BillingFixtures.envelope(BillingMessageType.CREATE_BUDGET),
                 BillingFixtures.OWNER, BillingFixtures.items(), total,

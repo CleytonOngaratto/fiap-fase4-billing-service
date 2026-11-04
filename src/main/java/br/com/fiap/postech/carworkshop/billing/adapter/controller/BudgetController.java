@@ -6,12 +6,14 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
@@ -44,6 +46,17 @@ public class BudgetController {
     @Operation(summary = "Budget with its items and, once it exists, the payment link")
     public BudgetResponse findById(@PathParam("id") UUID id) {
         return BudgetResponse.from(useCase.findById(id, document(), identity.hasRole(ADMIN)));
+    }
+
+    @GET
+    @RolesAllowed({CUSTOMER, ADMIN})
+    @Transactional
+    @Operation(summary = "Budget of a work order, for whoever knows the order but not the budget id")
+    public BudgetResponse findByWorkOrder(@QueryParam("work_order_id") Long workOrderId) {
+        if (workOrderId == null) {
+            throw new BadRequestException("The work_order_id query parameter is required.");
+        }
+        return BudgetResponse.from(useCase.findByWorkOrder(workOrderId, document(), identity.hasRole(ADMIN)));
     }
 
     // 202: a reserva de pecas e a cobranca sao assincronas, e o link de pagamento aparece no GET segundos

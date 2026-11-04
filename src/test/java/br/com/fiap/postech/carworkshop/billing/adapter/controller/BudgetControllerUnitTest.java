@@ -6,11 +6,13 @@ import br.com.fiap.postech.carworkshop.billing.support.BillingFixtures;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.in.BudgetUseCase;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.in.BudgetView;
 import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.ws.rs.BadRequestException;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +57,34 @@ class BudgetControllerUnitTest {
         controller.findById(budget.getId());
 
         verify(useCase).findById(budget.getId(), BillingFixtures.OWNER, true);
+    }
+
+    @Test
+    void findsTheBudgetOfTheWorkOrderForTheCustomerWhoAsked() {
+        Budget budget = BillingFixtures.budget();
+        when(identity.hasRole("ADMIN")).thenReturn(false);
+        when(useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.OWNER, false))
+                .thenReturn(new BudgetView(budget, null));
+
+        BudgetResponse response = controller.findByWorkOrder(BillingFixtures.WORK_ORDER_ID);
+
+        assertEquals(budget.getId().toString(), response.id());
+    }
+
+    @Test
+    void findsTheBudgetOfTheWorkOrderAsStaffWhenTheCallerIsAnAdmin() {
+        when(identity.hasRole("ADMIN")).thenReturn(true);
+        when(useCase.findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.OWNER, true))
+                .thenReturn(new BudgetView(BillingFixtures.budget(), null));
+
+        controller.findByWorkOrder(BillingFixtures.WORK_ORDER_ID);
+
+        verify(useCase).findByWorkOrder(BillingFixtures.WORK_ORDER_ID, BillingFixtures.OWNER, true);
+    }
+
+    @Test
+    void findingByWorkOrderWithoutTheParameterIsABadRequest() {
+        assertThrows(BadRequestException.class, () -> controller.findByWorkOrder(null));
     }
 
     // 202 e nao 200: a reserva de pecas e a cobranca sao assincronas e o link aparece no GET depois.
