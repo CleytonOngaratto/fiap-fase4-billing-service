@@ -46,7 +46,7 @@ public class OutboxRelayService {
     public void drain() {
         List<SagaOutboxJpaEntity> pending = repository.claimPending(batchSize);
         for (SagaOutboxJpaEntity row : pending) {
-            try (LogContext ignored = LogContext.of(row.correlationId, row.sagaId)) {
+            try (LogContext ignored = LogContext.of(row.correlationId, row.sagaId, row.branchId)) {
                 publisher.publish(messageFor(row));
                 row.sentAt = Instant.now(clock);
                 log.info("Outbox message {} sent for Work Order {}.", row.type, row.workOrderId);

@@ -63,7 +63,14 @@ public class MercadoPagoWebhookController {
             return Response.ok().build();
         }
 
-        try (LogContext ignored = LogContext.of(forLog(dataId), null)) {
+        try (LogContext ignored = LogContext.of(forLog(dataId), null, null)) {
+            handle(dataId);
+        }
+        return Response.ok().build();
+    }
+
+    private void handle(String dataId) {
+        try {
             useCase.onNotification(dataId);
         } catch (UnknownPaymentException e) {
             // Reconhece em vez de propagar: o Mercado Pago reentrega enquanto nao receber 2xx, e um
@@ -71,7 +78,6 @@ public class MercadoPagoWebhookController {
             log.warn("Notification {} refers to a payment the provider does not know: acknowledged.",
                     forLog(dataId));
         }
-        return Response.ok().build();
     }
 
     // Rota publica: o topico e o id vem da query string de quem chamar. Sem reduzir a um alfabeto

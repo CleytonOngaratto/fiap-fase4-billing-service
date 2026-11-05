@@ -2,6 +2,8 @@ package br.com.fiap.postech.carworkshop.billing.infrastructure.messaging;
 
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.SagaEnvelopeCodec;
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.TestCodec;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogContext;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogLines;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,9 @@ import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,6 +99,20 @@ class BillingCommandsConsumerTest {
     }
 
     @Test
+    void logsTheFailureWithTheContextOfTheCommand() {
+        doThrow(new IllegalStateException("boom")).when(handler).apply(any(JsonNode.class));
+
+        try (LogLines lines = LogLines.of(BillingCommandsConsumer.class)) {
+            consumer.consume(message("CreateBudget", "rh-1"));
+
+            assertEquals(List.of(Map.of(
+                    LogContext.CORRELATION_ID, "EVIDENCIA-B5-001",
+                    LogContext.SAGA_ID, "22222222-2222-2222-2222-222222222222",
+                    LogContext.BRANCH_ID, "SP-01")), lines.errors());
+        }
+    }
+
+    @Test
     void handlesTheCommandEvenWhenTheSagaIdIsMalformed() {
         consumer.consume(Message.builder()
                 .body("{\"type\":\"CreateBudget\",\"sagaId\":\"not-a-uuid\"}")
@@ -118,7 +137,7 @@ class BillingCommandsConsumerTest {
     private static Message message(String type, String receiptHandle) {
         return Message.builder()
                 .body("{\"messageId\":\"11111111-1111-1111-1111-111111111111\",\"type\":\"" + type
-                        + "\",\"sagaId\":\"22222222-2222-2222-2222-222222222222\","
+                        + "\",\"sagaId\":\"22222222-2222-2222-2222-222222222222\",\"branchId\":\"SP-01\","
                         + "\"correlationId\":\"EVIDENCIA-B5-001\",\"workOrderId\":42,\"payload\":{}}")
                 .receiptHandle(receiptHandle)
                 .build();
