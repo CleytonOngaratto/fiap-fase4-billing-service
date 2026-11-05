@@ -6,6 +6,7 @@ import br.com.fiap.postech.carworkshop.billing.domain.entity.Payment;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.PaymentStatus;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.BudgetNotFoundException;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.PaymentGatewayException;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingEvent;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingMessageType;
 import br.com.fiap.postech.carworkshop.billing.domain.message.CancelPaymentCommand;
@@ -20,6 +21,7 @@ import br.com.fiap.postech.carworkshop.billing.usecase.port.out.BudgetRepository
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.CancellationOutcome;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentGatewayPort;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentRepositoryPort;
+import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentSnapshot;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PreferenceCreated;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.RefundCreated;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.SagaOutboxPort;
@@ -125,12 +127,11 @@ class PaymentInteractorTest {
         assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
     }
 
-    // Ramo do erro 2018: o pagamento ja esta aprovado e nao e cancelavel. Nao e falha, e mudanca de
-    // caminho - estorna com a mesma chave de idempotencia e ainda confirma a compensacao.
     @Test
-    void refundsWhenMercadoPagoSaysThePaymentIsNoLongerCancelable() {
+    void refundsAnApprovedPaymentThatIsNoLongerCancelable() {
         Payment payment = pendingPaymentWithMercadoPagoId();
         when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1")).thenReturn(snapshot("approved"));
         when(gateway.refundPayment("mp-1", payment.getRefundIdempotencyKey()))
                 .thenReturn(new RefundCreated("refund-1"));
 
@@ -139,6 +140,75 @@ class PaymentInteractorTest {
         assertTrue(payment.isRefunded());
         assertEquals(CancelReason.PAID_AFTER_CANCELLATION, payment.getCancelReason());
         assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
+    }
+
+    @Test
+    void refundsAgainWithTheSameKeyWhenMercadoPagoAlreadyRefundedThePayment() {
+        Payment payment = pendingPaymentWithMercadoPagoId();
+        when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1")).thenReturn(snapshot("refunded"));
+        when(gateway.refundPayment("mp-1", payment.getRefundIdempotencyKey()))
+                .thenReturn(new RefundCreated("refund-1"));
+
+        useCase.cancel(cancelCommand());
+
+        verify(gateway).refundPayment("mp-1", payment.getRefundIdempotencyKey());
+        assertTrue(payment.isRefunded());
+        assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
+    }
+
+    @Test
+    void cancelsWithoutARefundWhenTheRejectedPaymentIsNoLongerCancelable() {
+        Payment payment = pendingPaymentWithMercadoPagoId();
+        when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1")).thenReturn(snapshot("rejected"));
+
+        useCase.cancel(cancelCommand());
+
+        verify(gateway, never()).refundPayment(any(), any());
+        assertEquals(PaymentStatus.CANCELED, payment.getStatus());
+        assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
+    }
+
+    @Test
+    void cancelsWithoutARefundWhenTheCancelledPaymentIsNoLongerCancelable() {
+        Payment payment = pendingPaymentWithMercadoPagoId();
+        when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1")).thenReturn(snapshot("cancelled"));
+
+        useCase.cancel(cancelCommand());
+
+        verify(gateway, never()).refundPayment(any(), any());
+        assertEquals(PaymentStatus.CANCELED, payment.getStatus());
+        assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
+    }
+
+    @Test
+    void cancelsWithoutARefundWhenMercadoPagoDoesNotKnowThePayment() {
+        Payment payment = pendingPaymentWithMercadoPagoId();
+        when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1"))
+                .thenThrow(new UnknownPaymentException("Mercado Pago does not know payment mp-1."));
+
+        useCase.cancel(cancelCommand());
+
+        verify(gateway, never()).refundPayment(any(), any());
+        assertEquals(PaymentStatus.CANCELED, payment.getStatus());
+        assertEquals(BillingMessageType.PAYMENT_CANCELED, captureEvent().envelope().type());
+    }
+
+    @Test
+    void leavesTheCommandForRetryWhenThePaymentStatusCannotBeRead() {
+        Payment payment = pendingPaymentWithMercadoPagoId();
+        when(gateway.cancelPayment("mp-1")).thenReturn(CancellationOutcome.NOT_CANCELABLE);
+        when(gateway.getPayment("mp-1"))
+                .thenThrow(new PaymentGatewayException("Mercado Pago answered HTTP 500."));
+
+        assertThrows(PaymentGatewayException.class, () -> useCase.cancel(cancelCommand()));
+
+        verify(gateway, never()).refundPayment(any(), any());
+        verify(outbox, never()).append(any());
+        assertEquals(PaymentStatus.PENDING, payment.getStatus());
     }
 
     // Best-effort: o Mercado Pago recusou por outro motivo e a compensacao segue. Suprimir o
@@ -198,6 +268,10 @@ class PaymentInteractorTest {
         payment.rememberAttempt("mp-1", BillingFixtures.NOW);
         when(payments.findByBudgetId(budget.getId())).thenReturn(Optional.of(payment));
         return payment;
+    }
+
+    private PaymentSnapshot snapshot(String status) {
+        return new PaymentSnapshot("mp-1", status, null, BillingFixtures.total(), budget.getId().toString());
     }
 
     private Payment confirmedPayment() {

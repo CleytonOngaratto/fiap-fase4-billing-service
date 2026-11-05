@@ -5,6 +5,7 @@ import br.com.fiap.postech.carworkshop.billing.domain.entity.CancelReason;
 import br.com.fiap.postech.carworkshop.billing.domain.entity.Payment;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.BudgetNotFoundException;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.PaymentGatewayException;
+import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingEvent;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingMessageType;
 import br.com.fiap.postech.carworkshop.billing.domain.message.CancelPaymentCommand;
@@ -19,6 +20,7 @@ import br.com.fiap.postech.carworkshop.billing.usecase.port.out.BudgetRepository
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.CancellationOutcome;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentGatewayPort;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentRepositoryPort;
+import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PaymentSnapshot;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.PreferenceCreated;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.RefundCreated;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.SagaOutboxPort;
@@ -83,7 +85,7 @@ public class PaymentInteractor implements PaymentUseCase {
 
         if (payment != null) {
             CancellationOutcome outcome = gateway.cancelPayment(payment.getMpPaymentId());
-            if (outcome == CancellationOutcome.NOT_CANCELABLE) {
+            if (outcome == CancellationOutcome.NOT_CANCELABLE && mayHaveBeenCharged(payment)) {
                 refundAtGateway(payment, CancelReason.PAID_AFTER_CANCELLATION);
             } else if (payment.cancel(command.reason(), Instant.now(clock))) {
                 payments.save(payment);
@@ -106,6 +108,23 @@ public class PaymentInteractor implements PaymentUseCase {
 
         outbox.append(BillingEvent.replyTo(command.envelope(), BillingMessageType.PAYMENT_REFUNDED,
                 new PaymentRefundedPayload(payment.getMpPaymentId(), payment.getRefundId())));
+    }
+
+    private boolean mayHaveBeenCharged(Payment payment) {
+        PaymentSnapshot snapshot;
+        try {
+            snapshot = gateway.getPayment(payment.getMpPaymentId());
+        } catch (UnknownPaymentException e) {
+            log.warn("Mercado Pago does not know payment {}: canceled without a refund.",
+                    payment.getMpPaymentId());
+            return false;
+        }
+        if (snapshot.wasNeverCharged()) {
+            log.info("Payment {} is {} at Mercado Pago and was never charged: canceled without a refund.",
+                    payment.getMpPaymentId(), snapshot.status());
+            return false;
+        }
+        return true;
     }
 
     private void refundAtGateway(Payment payment, String reason) {
