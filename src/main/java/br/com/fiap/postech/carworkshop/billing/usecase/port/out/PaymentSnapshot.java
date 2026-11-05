@@ -9,6 +9,10 @@ public record PaymentSnapshot(String mpPaymentId, String status, String statusDe
         return "approved".equals(status);
     }
 
+    public boolean wasNeverCharged() {
+        return "rejected".equals(status) || "cancelled".equals(status);
+    }
+
     public boolean isCancelable() {
         return "pending".equals(status) || "in_process".equals(status) || "authorized".equals(status);
     }
