@@ -1,5 +1,6 @@
 package br.com.fiap.postech.carworkshop.billing.infrastructure.observability;
 
+import org.jboss.logmanager.ExtLogRecord;
 import org.jboss.logmanager.Logger;
 import org.slf4j.MDC;
 
@@ -19,6 +20,7 @@ public final class LogLines extends Handler implements AutoCloseable {
     private final Logger logger;
     private final List<Level> levels = new ArrayList<>();
     private final List<Map<String, String>> contexts = new ArrayList<>();
+    private final List<String> messages = new ArrayList<>();
 
     private LogLines(Logger logger) {
         this.logger = logger;
@@ -36,6 +38,10 @@ public final class LogLines extends Handler implements AutoCloseable {
 
     public List<Map<String, String>> warnings() {
         return atLeast(Level.WARNING);
+    }
+
+    public List<String> messages() {
+        return List.copyOf(messages);
     }
 
     private List<Map<String, String>> atLeast(Level threshold) {
@@ -59,6 +65,9 @@ public final class LogLines extends Handler implements AutoCloseable {
         }
         levels.add(logRecord.getLevel());
         contexts.add(context);
+        messages.add(logRecord instanceof ExtLogRecord extended
+                ? extended.getFormattedMessage()
+                : logRecord.getMessage());
     }
 
     @Override

@@ -1,5 +1,7 @@
 package br.com.fiap.postech.carworkshop.billing.adapter.gateway;
 
+import br.com.fiap.postech.carworkshop.billing.domain.message.BillingMessageType;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogLines;
 import br.com.fiap.postech.carworkshop.billing.support.BillingFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,6 +10,7 @@ import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -51,6 +54,18 @@ class SnsBillingEventGatewayTest {
         assertEquals("Number", attributes.get("version").dataType());
         assertEquals(sagaId.toString(), attributes.get("sagaId").stringValue());
         assertEquals("EVIDENCIA-B5-001", attributes.get("correlationId").stringValue());
+    }
+
+    // Os paineis de pagamento contam esta linha no New Relic: mudar o texto zera os paineis sem erro nenhum.
+    @Test
+    void logsTheLineThePaymentPanelsCount() {
+        try (LogLines lines = LogLines.of(SnsBillingEventGateway.class)) {
+            gateway.publish(new OutboundMessage(UUID.randomUUID(), BillingMessageType.PAYMENT_CONFIRMED, 1,
+                    BillingFixtures.WORK_ORDER_ID, UUID.randomUUID(), null, "{}", Map.of()));
+
+            assertEquals(List.of("PaymentConfirmed published for Work Order " + BillingFixtures.WORK_ORDER_ID + "."),
+                    lines.messages());
+        }
     }
 
     @Test
