@@ -35,7 +35,7 @@ class SnsBillingEventGatewayTest {
         UUID sagaId = UUID.randomUUID();
 
         gateway.publish(new OutboundMessage(messageId, "BudgetCreated", 1,
-                BillingFixtures.WORK_ORDER_ID, sagaId, "EVIDENCIA-B5-001", "{}"));
+                BillingFixtures.WORK_ORDER_ID, sagaId, "EVIDENCIA-B5-001", "{}", Map.of()));
 
         PublishRequest request = capture();
         assertEquals(TOPIC_ARN, request.topicArn());
@@ -56,11 +56,25 @@ class SnsBillingEventGatewayTest {
     @Test
     void omitsTheCorrelationAttributeWhenThereIsNoTraceId() {
         gateway.publish(new OutboundMessage(UUID.randomUUID(), "BudgetCanceled", 1,
-                BillingFixtures.WORK_ORDER_ID, UUID.randomUUID(), "  ", "{}"));
+                BillingFixtures.WORK_ORDER_ID, UUID.randomUUID(), "  ", "{}", Map.of()));
 
         Map<String, MessageAttributeValue> attributes = capture().messageAttributes();
         assertEquals(3, attributes.size());
         assertFalse(attributes.containsKey("correlationId"));
+    }
+
+    @Test
+    void publishesTheTraceHeadersAsStringAttributes() {
+        gateway.publish(new OutboundMessage(UUID.randomUUID(), "BudgetCreated", 1,
+                BillingFixtures.WORK_ORDER_ID, UUID.randomUUID(), "EVIDENCIA-B8-001", "{}",
+                Map.of("traceparent", "00-trace-span-01", "tracestate", "nr=state", "newrelic", "payload")));
+
+        Map<String, MessageAttributeValue> attributes = capture().messageAttributes();
+        assertEquals(7, attributes.size());
+        assertEquals("00-trace-span-01", attributes.get("traceparent").stringValue());
+        assertEquals("String", attributes.get("traceparent").dataType());
+        assertEquals("nr=state", attributes.get("tracestate").stringValue());
+        assertEquals("payload", attributes.get("newrelic").stringValue());
     }
 
     private PublishRequest capture() {

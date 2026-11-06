@@ -4,6 +4,8 @@ import br.com.fiap.postech.carworkshop.billing.domain.message.BillingEvent;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingMessageType;
 import br.com.fiap.postech.carworkshop.billing.domain.message.BudgetCreatedPayload;
 import br.com.fiap.postech.carworkshop.billing.domain.message.SagaEnvelope;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceHeaders;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxPanacheRepository;
 import br.com.fiap.postech.carworkshop.billing.support.BillingFixtures;
@@ -12,13 +14,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class SagaOutboxGatewayTest {
 
     private SagaOutboxPanacheRepository repository;
+    private TraceContext trace;
     private SagaOutboxGateway gateway;
 
     @BeforeEach
@@ -29,6 +35,22 @@ class SagaOutboxGatewayTest {
         gateway = new SagaOutboxGateway();
         gateway.repository = repository;
         gateway.codec = codec;
+        trace = mock(TraceContext.class);
+        gateway.trace = trace;
+    }
+
+    @Test
+    void keepsTheTraceContextOfTheCurrentTransaction() {
+        when(trace.capture()).thenReturn(Map.of("traceparent", "00-trace-span-01"));
+        SagaEnvelope cause = BillingFixtures.envelope(BillingMessageType.CREATE_BUDGET);
+
+        gateway.append(BillingEvent.replyTo(cause, BillingMessageType.BUDGET_CREATED,
+                new BudgetCreatedPayload("b-1", BillingFixtures.total())));
+
+        ArgumentCaptor<SagaOutboxJpaEntity> captor = ArgumentCaptor.forClass(SagaOutboxJpaEntity.class);
+        verify(repository).persist(captor.capture());
+        assertEquals(Map.of("traceparent", "00-trace-span-01"),
+                TraceHeaders.fromJson(captor.getValue().traceContext));
     }
 
     @Test

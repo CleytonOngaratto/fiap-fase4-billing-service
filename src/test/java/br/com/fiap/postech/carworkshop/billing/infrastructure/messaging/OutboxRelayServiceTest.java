@@ -4,6 +4,8 @@ import br.com.fiap.postech.carworkshop.billing.adapter.gateway.BillingEventPubli
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.OutboundMessage;
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.SagaEnvelopeCodec;
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.TestCodec;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceHeaders;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxPanacheRepository;
 import br.com.fiap.postech.carworkshop.billing.support.BillingFixtures;
@@ -15,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,17 +35,20 @@ class OutboxRelayServiceTest {
 
     private SagaOutboxPanacheRepository repository;
     private BillingEventPublisher publisher;
+    private TraceContext trace;
     private OutboxRelayService relay;
 
     @BeforeEach
     void setUp() {
         repository = mock(SagaOutboxPanacheRepository.class);
         publisher = mock(BillingEventPublisher.class);
+        trace = mock(TraceContext.class);
         SagaEnvelopeCodec codec = TestCodec.codec();
         relay = new OutboxRelayService();
         relay.repository = repository;
         relay.codec = codec;
         relay.publisher = publisher;
+        relay.trace = trace;
         relay.clock = Clock.fixed(BillingFixtures.NOW, ZoneOffset.UTC);
         relay.batchSize = 10;
     }
@@ -77,6 +84,26 @@ class OutboxRelayServiceTest {
         verifyNoInteractions(publisher);
     }
 
+    @Test
+    void dropsTheTransactionOfAnEmptyCycle() {
+        when(repository.claimPending(10)).thenReturn(List.of());
+
+        relay.drain();
+
+        verify(trace).ignoreTransaction();
+        verify(trace, never()).nameTransaction(any(), any());
+    }
+
+    @Test
+    void namesTheTransactionOfACycleThatPublishes() {
+        when(repository.claimPending(10)).thenReturn(List.of(row()));
+
+        relay.drain();
+
+        verify(trace).nameTransaction("Scheduled", "billing-outbox-relay");
+        verify(trace, never()).ignoreTransaction();
+    }
+
     // Publicacao que falha nao pode deixar sent_at marcado: a excecao sobe e a transacao do relay
     // desfaz a marca, senao a mensagem fica como enviada sem nunca ter saido.
     @Test
@@ -88,6 +115,34 @@ class OutboxRelayServiceTest {
         assertThrows(IllegalStateException.class, () -> relay.drain());
 
         assertNull(row.sentAt);
+    }
+
+    @Test
+    void handsTheStoredTraceContextToThePublisher() {
+        SagaOutboxJpaEntity row = row();
+        row.traceContext = TraceHeaders.toJson(Map.of("traceparent", "00-trace-span-01", "newrelic", "payload"));
+        when(repository.claimPending(10)).thenReturn(List.of(row));
+
+        relay.drain();
+
+        ArgumentCaptor<OutboundMessage> captor = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(publisher).publish(captor.capture());
+        assertEquals(Map.of("traceparent", "00-trace-span-01", "newrelic", "payload"),
+                captor.getValue().traceHeaders());
+    }
+
+    @Test
+    void handsNoTraceContextWhenTheStoredOneIsCorrupt() {
+        SagaOutboxJpaEntity row = row();
+        row.traceContext = "{\"traceparent\":";
+        when(repository.claimPending(10)).thenReturn(List.of(row));
+
+        relay.drain();
+
+        ArgumentCaptor<OutboundMessage> captor = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(publisher).publish(captor.capture());
+        assertEquals(Map.of(), captor.getValue().traceHeaders());
+        assertEquals(BillingFixtures.NOW, row.sentAt);
     }
 
     private String codecNode(String body) {

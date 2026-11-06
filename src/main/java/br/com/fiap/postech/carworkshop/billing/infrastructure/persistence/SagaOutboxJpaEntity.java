@@ -45,4 +45,7 @@ public class SagaOutboxJpaEntity {
 
     @Column(name = "sent_at")
     public Instant sentAt;
+
+    @Column(name = "trace_context")
+    public String traceContext;
 }
