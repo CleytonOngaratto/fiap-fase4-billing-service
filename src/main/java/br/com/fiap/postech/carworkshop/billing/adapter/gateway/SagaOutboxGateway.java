@@ -2,6 +2,8 @@ package br.com.fiap.postech.carworkshop.billing.adapter.gateway;
 
 import br.com.fiap.postech.carworkshop.billing.domain.message.BillingEvent;
 import br.com.fiap.postech.carworkshop.billing.domain.message.SagaEnvelope;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.TraceHeaders;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.billing.infrastructure.persistence.SagaOutboxPanacheRepository;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.out.SagaOutboxPort;
@@ -17,6 +19,9 @@ public class SagaOutboxGateway implements SagaOutboxPort {
 
     @Inject
     SagaEnvelopeCodec codec;
+
+    @Inject
+    TraceContext trace;
 
     // MANDATORY: sem transacao ativa isto LANCA em vez de abrir uma propria, que e o que torna
     // "gravar o estado e publicar o evento" atomico de verdade.
@@ -35,6 +40,7 @@ public class SagaOutboxGateway implements SagaOutboxPort {
         row.correlationId = envelope.correlationId();
         row.causationId = envelope.causationId();
         row.payload = codec.writePayload(event.payload());
+        row.traceContext = TraceHeaders.toJson(trace.capture());
         repository.persist(row);
     }
 }

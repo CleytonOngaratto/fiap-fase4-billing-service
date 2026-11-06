@@ -2,11 +2,16 @@ package br.com.fiap.postech.carworkshop.billing.adapter.controller;
 
 import br.com.fiap.postech.carworkshop.billing.adapter.gateway.MercadoPagoSignatureVerifier;
 import br.com.fiap.postech.carworkshop.billing.domain.exception.UnknownPaymentException;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogContext;
+import br.com.fiap.postech.carworkshop.billing.infrastructure.observability.LogLines;
 import br.com.fiap.postech.carworkshop.billing.usecase.port.in.PaymentNotificationUseCase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -116,6 +121,17 @@ class MercadoPagoWebhookControllerUnitTest {
 
         assertEquals(200, controller.notify(body("payment", DATA_ID), "payment", null, null,
                 SIGNATURE, REQUEST_ID).getStatus());
+    }
+
+    @Test
+    void logsAnUnknownPaymentWithTheNotificationAsItsCorrelation() {
+        doThrow(new UnknownPaymentException("unknown")).when(useCase).onNotification(DATA_ID);
+
+        try (LogLines lines = LogLines.of(MercadoPagoWebhookController.class)) {
+            controller.notify(body("payment", DATA_ID), "payment", null, null, SIGNATURE, REQUEST_ID);
+
+            assertEquals(List.of(Map.of(LogContext.CORRELATION_ID, DATA_ID)), lines.warnings());
+        }
     }
 
     private JsonNode body(String type, String dataId) {

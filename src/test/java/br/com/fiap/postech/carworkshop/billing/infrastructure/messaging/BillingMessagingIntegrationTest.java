@@ -65,12 +65,14 @@ class BillingMessagingIntegrationTest {
     // O indice parcial da V2 e justamente o que o H2 nao suporta: ve-lo aqui prova que a migracao rodou num
     // PostgreSQL de verdade, e nao no esquema que o Hibernate cria no perfil de teste.
     @Test
-    void flywayAppliedBothMigrationsWithThePartialIndex() {
-        assertEquals("1.0.0,2.0.0", query(
+    void flywayAppliedEveryMigrationWithThePartialIndexAndTheTraceColumn() {
+        assertEquals("1.0.0,2.0.0,3.0.0", query(
                 "select string_agg(version, ',' order by installed_rank) from flyway_schema_history"
                         + " where success"));
         assertTrue(query("select indexdef from pg_indexes where indexname = 'saga_outbox_pending_idx'")
                 .contains("sent_at IS NULL"));
+        assertEquals("text", query("select data_type from information_schema.columns"
+                + " where table_name = 'saga_outbox' and column_name = 'trace_context'"));
     }
 
     @Test
