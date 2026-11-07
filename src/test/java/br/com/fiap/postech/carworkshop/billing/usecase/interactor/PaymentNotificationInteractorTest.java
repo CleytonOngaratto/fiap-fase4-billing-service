@@ -39,6 +39,7 @@ import static org.mockito.Mockito.when;
 class PaymentNotificationInteractorTest {
 
     private static final String MP_ID = "mp-1";
+    private static final String LATE_MP_ID = "mp-2";
 
     private BudgetRepositoryPort budgets;
     private PaymentRepositoryPort payments;
@@ -146,6 +147,36 @@ class PaymentNotificationInteractorTest {
     }
 
     @Test
+    void keepsTheApprovedPaymentWhenARejectedAttemptArrivesAfterIt() {
+        payment.confirm(MP_ID, BillingFixtures.NOW);
+        when(gateway.getPayment(LATE_MP_ID))
+                .thenReturn(snapshot(LATE_MP_ID, "rejected", "cc_rejected_insufficient_amount"));
+
+        useCase.onNotification(LATE_MP_ID);
+
+        assertEquals(MP_ID, payment.getMpPaymentId());
+        assertEquals(PaymentStatus.CONFIRMED, payment.getStatus());
+        verify(attempts).recordIfNew(any());
+        verify(payments, never()).save(any());
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void recordsARejectedAttemptOnACanceledChargeWithoutPublishingIt() {
+        budget.cancel("PAYMENT_EXPIRED", BillingFixtures.NOW);
+        payment.cancel("PAYMENT_EXPIRED", BillingFixtures.NOW);
+        when(gateway.getPayment(LATE_MP_ID))
+                .thenReturn(snapshot(LATE_MP_ID, "rejected", "cc_rejected_other_reason"));
+
+        useCase.onNotification(LATE_MP_ID);
+
+        assertEquals(PaymentStatus.CANCELED, payment.getStatus());
+        verify(attempts).recordIfNew(any());
+        verify(payments, never()).save(any());
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
     void failsWhenTheNotificationHasNoUsableExternalReference() {
         when(gateway.getPayment(MP_ID))
                 .thenReturn(new PaymentSnapshot(MP_ID, "approved", "accredited", BigDecimal.ONE, "x"));
@@ -162,7 +193,11 @@ class PaymentNotificationInteractorTest {
     }
 
     private PaymentSnapshot snapshot(String status, String statusDetail) {
-        return new PaymentSnapshot(MP_ID, status, statusDetail, BillingFixtures.total(),
+        return snapshot(MP_ID, status, statusDetail);
+    }
+
+    private PaymentSnapshot snapshot(String mpPaymentId, String status, String statusDetail) {
+        return new PaymentSnapshot(mpPaymentId, status, statusDetail, BillingFixtures.total(),
                 budget.getId().toString());
     }
 

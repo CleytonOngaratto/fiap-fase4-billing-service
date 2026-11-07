@@ -94,9 +94,13 @@ public class Payment {
         return true;
     }
 
-    public void rememberAttempt(String mpPaymentId, Instant now) {
+    public boolean rememberAttempt(String mpPaymentId, Instant now) {
+        if (status != PaymentStatus.PENDING) {
+            return false;
+        }
         this.mpPaymentId = mpPaymentId;
         this.updatedAt = now;
+        return true;
     }
 
     public boolean isRefunded() {
