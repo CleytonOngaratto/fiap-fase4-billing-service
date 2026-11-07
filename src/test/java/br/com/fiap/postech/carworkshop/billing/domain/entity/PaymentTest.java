@@ -68,9 +68,19 @@ class PaymentTest {
     void remembersARejectedAttemptWithoutChangingTheStatus() {
         Payment payment = BillingFixtures.payment(UUID.randomUUID());
 
-        payment.rememberAttempt("mp-9", BillingFixtures.NOW);
-
+        assertTrue(payment.rememberAttempt("mp-9", BillingFixtures.NOW));
         assertEquals("mp-9", payment.getMpPaymentId());
         assertEquals(PaymentStatus.PENDING, payment.getStatus());
+    }
+
+    @Test
+    void keepsTheApprovedPaymentWhenALateAttemptArrives() {
+        Payment payment = BillingFixtures.payment(UUID.randomUUID());
+        payment.confirm("mp-approved", BillingFixtures.NOW);
+
+        assertFalse(payment.rememberAttempt("mp-rejected", BillingFixtures.NOW.plusSeconds(60)));
+        assertEquals("mp-approved", payment.getMpPaymentId());
+        assertEquals(PaymentStatus.CONFIRMED, payment.getStatus());
+        assertEquals(BillingFixtures.NOW, payment.getUpdatedAt());
     }
 }

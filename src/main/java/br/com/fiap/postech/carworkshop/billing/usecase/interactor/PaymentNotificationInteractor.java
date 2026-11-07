@@ -85,7 +85,11 @@ public class PaymentNotificationInteractor implements PaymentNotificationUseCase
                     snapshot.statusDetail(), snapshot.mpPaymentId());
             return;
         }
-        payment.rememberAttempt(snapshot.mpPaymentId(), Instant.now(clock));
+        if (!payment.rememberAttempt(snapshot.mpPaymentId(), Instant.now(clock))) {
+            log.info("Attempt {} of payment {} arrived for a charge already {}: recorded, not published.",
+                    snapshot.statusDetail(), snapshot.mpPaymentId(), payment.getStatus());
+            return;
+        }
         payments.save(payment);
         publish(budget, BillingMessageType.PAYMENT_ATTEMPT_REJECTED,
                 PaymentAttemptRejectedPayload.of(snapshot.statusDetail()));
