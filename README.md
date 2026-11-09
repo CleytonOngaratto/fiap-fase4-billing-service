@@ -1,5 +1,8 @@
 # fiap-fase4-billing-service
 
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=CleytonOngaratto_fiap-fase4-billing-service&metric=coverage)](https://sonarcloud.io/summary/overall?id=CleytonOngaratto_fiap-fase4-billing-service&branch=main)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=CleytonOngaratto_fiap-fase4-billing-service&metric=alert_status)](https://sonarcloud.io/summary/overall?id=CleytonOngaratto_fiap-fase4-billing-service&branch=main)
+
 Billing Service da Fase 4 do Tech Challenge (FIAP SOAT): orçamento a partir do diagnóstico, aprovação pelo
 cliente e pagamento pelo Checkout Pro do Mercado Pago. Quarkus.
 
@@ -14,9 +17,38 @@ A Saga é **orquestrada**, e o orquestrador vive no OS Service. Este serviço é
 comandos numa fila FIFO própria e responde com eventos num tópico FIFO próprio. Nunca decide o próximo passo
 do processo, e nunca lê o banco de outro serviço.
 
-```
-OS Service (outbox)  ──comandos──▶  billing-commands.fifo (SQS)  ──▶  este serviço
-este serviço (outbox)  ──eventos──▶  billing-events.fifo (SNS)  ──▶  os-saga-replies.fifo
+```mermaid
+flowchart TB
+    PES["Cliente e atendimento"]
+    OS["OS Service<br/>orquestrador"]
+    MP(["Mercado Pago"])
+    GW{{"API Gateway"}}
+
+    subgraph svc["Billing Service"]
+        API["REST<br/>orçamento e aprovação"]
+        WH["Webhook do pagamento"]
+        CON["Consumidor de comandos"]
+        REL["Relay do outbox"]
+    end
+
+    DB[("Postgres do Billing<br/>orçamento, cobrança, outbox, inbox")]
+    CQ[["billing-commands.fifo"]]
+    ET(["billing-events.fifo"])
+
+    PES --> GW
+    MP -->|notificação| GW
+    GW --> API
+    GW --> WH
+    OS -->|comandos| CQ
+    CQ --> CON
+    API --> DB
+    WH --> DB
+    CON --> DB
+    CON -->|"cobrança e estorno"| MP
+    WH -->|"confere o pagamento"| MP
+    DB --> REL
+    REL -->|eventos| ET
+    ET -->|"os-saga-replies.fifo"| OS
 ```
 
 ### Comandos que consome
@@ -45,6 +77,32 @@ Três regras valem para todos eles:
 3. **O webhook é a exceção da regra 1**: ali não existe `messageId`, então o evento só sai quando a
    transição de fato mudou o estado — é o único freio contra a reentrega do provedor gerar evento duplicado.
 
+## Tecnologias
+
+| Tecnologia | Versão | Uso |
+|---|---|---|
+| Java | **17** | linguagem; imagem `eclipse-temurin:17-jre-jammy` |
+| Quarkus | **3.26.3** | REST, CDI, configuração e agendamento |
+| Hibernate ORM com Panache | 7.1.0 | persistência |
+| Flyway | 11.11.2 | migrations |
+| PostgreSQL | 16, driver 42.7.7 | banco do serviço |
+| AWS SDK for Java v2 (SQS e SNS) | 2.32.4 | fila de comandos e tópico de eventos |
+| Mercado Pago, Checkout Pro | API REST | cobrança, confirmação e estorno ([ADR-008](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/docs/arquitetura/adr/ADR-008-pagamento-mercado-pago.md)) |
+| SmallRye JWT | 4.6.2 | valida o token RS256 |
+| SmallRye OpenAPI e Swagger UI | 4.0.12 | especificação da API |
+| Micrometer com Prometheus | 1.14.7 | métricas |
+| New Relic Java Agent | 9.4.0 | APM, traço distribuído e logs |
+| JUnit 5 · Mockito · REST Assured | 5.13.4 · 5.18.0 · 5.5.6 | testes de unidade e de API |
+| Testcontainers · WireMock | 1.21.3 · 3.13.2 | testes com Postgres e filas reais, e o Mercado Pago simulado |
+| ArchUnit | 1.3.0 | regras de arquitetura |
+| JaCoCo | 0.8.12 | cobertura e gate do build |
+| SonarCloud (`sonar-maven-plugin`) | 5.8.0.7211 | análise de qualidade no CI |
+| Trivy | 0.58.0 | varredura de vulnerabilidades no CI |
+| ElasticMQ | 1.7.1 | filas no ambiente local e nos testes |
+| Terraform · provider AWS · provider random | 1.15.4 · 6.57.1 · 3.9.1 | infraestrutura do serviço |
+| Amazon EKS · kubectl | 1.36 (medido em 2026-10-11) · 1.35.9 | execução e deploy |
+| GitHub Actions | — | CI/CD |
+
 ## API
 
 | Rota | Quem pode | Resposta |
@@ -62,6 +120,25 @@ Aprovar exige três condições, nesta ordem: ser o dono (**403**), o orçamento
 O webhook responde **200 para tópico que não é de pagamento**: qualquer outra coisa faz o Mercado Pago
 reentregar para sempre. A única proteção da rota é a assinatura `x-signature`, comparada em tempo constante
 e **negando quando o segredo não está configurado**.
+
+### Swagger e Postman
+
+| O quê | Onde |
+|---|---|
+| Swagger UI, com o [ambiente local](#ambiente-local) de pé | `http://localhost:8081/swagger-ui/` |
+| OpenAPI em tempo de execução | `http://localhost:8081/billing/v1/q/openapi` |
+| Especificação versionada, gravada pelo build | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) |
+| Collection do Postman | [`docs/api/billing.postman_collection.json`](docs/api/billing.postman_collection.json) |
+| Ambiente de exemplo, com os valores vazios | [`docs/api/gateway.example.postman_environment.json`](docs/api/gateway.example.postman_environment.json) |
+
+O job `build` falha se o `openapi.yaml` versionado divergir do gerado. O Swagger UI e o `/q/*` não passam pelo API Gateway, e as
+rotas públicas são as da allowlist, em
+[`session/locals.tf`](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless/blob/main/session/locals.tf).
+
+Um orçamento só existe depois que a saga chega ao `CreateBudget`. Preencha `workOrderId` e `cpf` com os da ordem de serviço, ou
+rode antes o [fluxo completo](https://github.com/CleytonOngaratto/fiap-fase4-os-service#como-usar-a-collection) do os-service.
+`baseUrl` é o valor de `/fase4/apigw/url`, e o token do cliente vem do `POST /auth`. Rode uma pasta por vez, pelo Collection
+Runner ou pelo Newman: aprovar e rejeitar são caminhos alternativos do mesmo orçamento, e as esperas não funcionam no "Send".
 
 ## "Atualização do status da OS após o pagamento"
 
@@ -119,6 +196,21 @@ repositórios é provado no teste de integração, contra Postgres real.
 
 As **entidades** Panache ficam no mesmo pacote e **continuam medidas** — essas, teste puro cobre.
 
+## Evidência de cobertura
+
+| Medida | Valor | Onde se lê |
+|---|---|---|
+| `coverage` do SonarCloud, o número do badge (soma linhas e condições) | **96,3%** | API do SonarCloud, lida em 2026-11-09 |
+| `line_coverage` do SonarCloud | 97,7% | idem |
+| `branch_coverage` do SonarCloud | 91,0% | idem |
+| Testes | 228, nenhuma falha | `./mvnw clean verify`, em 2026-11-09 |
+| JaCoCo `LINE`, o gate do build (mínimo de 80%) | **97,73%** (1035 de 1059 linhas) | idem |
+
+O badge e o gate medem coisas diferentes: o `coverage` do Sonar soma linhas e condições, e o gate do JaCoCo olha só linhas. Por
+isso os números não coincidem. A exclusão descrita acima vale para os dois.
+
+![Painel do SonarCloud](docs/img/sonarcloud.png)
+
 ## Deploy
 
 | Workflow | Gatilho | O que faz |
@@ -138,6 +230,7 @@ rodam juntos: o `cd.yml` espera no SSM o target group, os cinco parâmetros do R
 |---|---|
 | `/fase4/vpc/id`, `/fase4/vpc/private-subnets`, `/fase4/eks/node-sg-id`, `/fase4/alb/listener-arn` | plataforma ([fiap-fase4-infra-k8s](https://github.com/CleytonOngaratto/fiap-fase4-infra-k8s)), no `terraform/` |
 | `/fase4/ecr/billing/repo-url`, `/fase4/eks/cluster-name`, `/fase4/alb/sg-id`, `/fase4/sns/billing-events/topic-arn` | plataforma, no `cd.yml` |
+| `/fase4/apigw/url` | [fiap-fase4-auth-serverless](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless), no smoke do `cd.yml` |
 | `/fase4/jwt/public-key` | bootstrap manual — o Billing **valida** o JWT e nunca o assina, então a chave privada não entra neste cluster |
 | `/fase4/mercadopago/access-token`, `/fase4/mercadopago/webhook-secret` | bootstrap manual (sobrevivem ao teardown) |
 | `/fase4/newrelic/license-key` | bootstrap manual |
@@ -166,3 +259,12 @@ O namespace tem a label `elbv2.k8s.aws/pod-readiness-gate-inject: enabled`: o po
 alvo dele está `healthy` no target group, e o `preStop` segura o encerramento enquanto o ALB drena o alvo.
 
 A entrada é sempre pelo API Gateway; `/q/*` (health, métricas, OpenAPI) só dentro da VPC.
+
+## Decisões
+
+| ADR | Decisão |
+|---|---|
+| [ADR-001](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/docs/arquitetura/adr/ADR-001-saga-orquestrada.md) | Saga orquestrada, com este serviço como participante |
+| [ADR-006](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/docs/arquitetura/adr/ADR-006-mensageria.md) | Mensageria: SNS FIFO, SQS FIFO e outbox transacional |
+| [ADR-008](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/docs/arquitetura/adr/ADR-008-pagamento-mercado-pago.md) | Pagamento pelo Checkout Pro do Mercado Pago |
+| [ADR-011](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/docs/arquitetura/adr/ADR-011-bancos-sql-e-nosql.md) | PostgreSQL próprio, numa instância RDS só deste serviço |
