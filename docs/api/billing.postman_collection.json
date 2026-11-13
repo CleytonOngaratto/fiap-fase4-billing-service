@@ -235,7 +235,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/billing/v1/budgets/{{budgetId}}/approve",
             "auth": {
               "type": "bearer",
@@ -311,7 +316,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/billing/v1/budgets/{{budgetId}}/reject",
             "auth": {
               "type": "bearer",
