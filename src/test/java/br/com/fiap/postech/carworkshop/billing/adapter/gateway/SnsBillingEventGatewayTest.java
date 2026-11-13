@@ -21,7 +21,7 @@ import static org.mockito.Mockito.verify;
 
 class SnsBillingEventGatewayTest {
 
-    private static final String TOPIC_ARN = "arn:aws:sns:us-east-1:436061918963:billing-events.fifo";
+    private static final String TOPIC_ARN = "arn:aws:sns:us-east-1:000000000000:billing-events.fifo";
 
     private SnsClient sns;
     private SnsBillingEventGateway gateway;

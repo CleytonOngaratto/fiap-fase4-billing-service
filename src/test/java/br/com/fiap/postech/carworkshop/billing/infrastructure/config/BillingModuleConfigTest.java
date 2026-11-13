@@ -38,7 +38,7 @@ class BillingModuleConfigTest {
         config.mercadoPagoRetryBackoff = Duration.ZERO;
         config.mercadoPagoFake = true;
         config.publishToLog = true;
-        config.topicArn = "arn:aws:sns:us-east-1:436061918963:billing-events.fifo";
+        config.topicArn = "arn:aws:sns:us-east-1:000000000000:billing-events.fifo";
     }
 
     @Test
